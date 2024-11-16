@@ -35,11 +35,22 @@
     collectData: true,
   });
 
+  // capture info from Prolific
+  var subject_id = jsPsych.data.getURLVariable('PROLIFIC_PID');
+  var study_id = jsPsych.data.getURLVariable('STUDY_ID');
+  var session_id = jsPsych.data.getURLVariable('SESSION_ID');
+
+  jsPsych.data.addProperties({
+    subject_id: subject_id,
+    study_id: study_id,
+    session_id: session_id
+  });
+
   /* Create timeline */
   var timeline = [];
 
 
-  // Firebase database init with exp4 configuration
+  // Firebase database init 
   const firebaseConfig = {
     apiKey: "AIzaSyD68L-6y5ip5ebJYn6pcbz8Ges6eQJs4I4",
     authDomain: "ambiguity-bfd57.firebaseapp.com",
@@ -269,7 +280,7 @@
   /* define demographics */
   var demographics = {
     type: jsPsychSurveyHtmlForm,
-    html: "<div style='word-wrap: break-word; width: 900px'><h3>Demographic info</h3><p><label for='SONA number'>SONA ID: </label><input type='text' id='SONA' name='SONA' required size='10'></p><p><label for='gender'>Gender: </label><input type='text' id='gender' name='gender' required size='10'></p><p><label for='age'>Age: </label><input type='text' id='age' name='age' required size='10'></p><p><label for='mother tongue'>Mother tongue: </label><input type='text' id='mother tongue' name='mother tongue' required size='10'></p><p><label for='ethnicity'>Ethnicity: </label><input type='text' id='ethnicity' name='ethnicity' required size='10'></p><p>Do you have any formal visual arts/design/architecture training? </p><p><input type='radio' id='yestraining' name='training' value='yes' required><label for='yestraining'> Yes </label><input type='radio' id='notraining' name='training' value='no'><label for='noarttraining'> No </label></p><p><label for='trainingyears'>If yes, what type of training and how many years of training do you have? </label><input type='text' id='trainingyears' name='trainingyears' size='10'></p></div>",
+    html: "<div style='word-wrap: break-word; width: 900px'><h3>Demographic info</h3><p><label for='SONA number'>Prolific ID: </label><input type='text' id='SONA' name='SONA' required size='10'></p><p><label for='gender'>Gender: </label><input type='text' id='gender' name='gender' required size='10'></p><p><label for='age'>Age: </label><input type='text' id='age' name='age' required size='10'></p><p><label for='mother tongue'>Mother tongue: </label><input type='text' id='mother tongue' name='mother tongue' required size='10'></p><p><label for='ethnicity'>Ethnicity: </label><input type='text' id='ethnicity' name='ethnicity' required size='10'></p><p>Do you have any formal visual arts/design/architecture training? </p><p><input type='radio' id='yestraining' name='training' value='yes' required><label for='yestraining'> Yes </label><input type='radio' id='notraining' name='training' value='no'><label for='noarttraining'> No </label></p><p><label for='trainingyears'>If yes, what type of training and how many years of training do you have? </label><input type='text' id='trainingyears' name='trainingyears' size='10'></p></div>",
     data: {
       task: 'demographics'
     }
