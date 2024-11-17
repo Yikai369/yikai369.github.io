@@ -5,7 +5,7 @@
   <title>My experiment</title>
   <script src="https://unpkg.com/jspsych@7.3.4"></script>
   <script src="all_imageList_str.js"></script>
-  <script src="stimuli_list.js"></script>
+  <!-- <script src="stimuli_list.js"></script> -->
   <script src="chunk_list.js"></script>
   
   <script src="https://unpkg.com/@jspsych/plugin-preload@1.1.3"></script>
@@ -225,12 +225,17 @@
 
   // Function to randomly pick a chunk
   function getRandomChunk() {
-  const randomIndex = Math.floor(Math.random() * chunkList.length);
+  // const randomIndex = Math.floor(Math.random() * chunkList.length);
+  const randomIndex = 0;
   // const randomIndex = 2
-  return chunkList[randomIndex]; // Directly return the random chunk
+  return [chunkList[randomIndex], randomIndex]; // Directly return the random chunk
   }
-  const test_stimuli = getRandomChunk();
+  const [test_stimuli, chunk_index] = getRandomChunk();
+  console.log(test_stimuli.length, chunk_index)
   
+  jsPsych.data.addProperties({
+    chunk_ixs: chunk_index
+  });
 
 
   /* define test procedure */
@@ -298,7 +303,7 @@
     type: jsPsychHtmlButtonResponse,
     choices: ["End"],
     stimulus: "<p>You have reached the end of the experiment.</p>" +
-      "<p>The aim of our experiment was to collect ambiguity ratings for subsequent analysis of the relationship between ambiguity and aesthetic pleasure..</p>" +
+      "<p>The aim of our experiment was to collect ambiguity ratings for subsequent analysis of the relationship between ambiguity and aesthetic pleasure.</p>" +
       "<p>The experiment results will be used for a student research project and may be used for future academic publications. As a reminder, all results will be kept anonymous.</p>" +
       "<p>Thank you for participating!</p>" +
       "<div style='width: 900px';>",
