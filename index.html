@@ -96,9 +96,11 @@
 
   /* create random subject ID and save it */
   var subject_id = jsPsych.randomization.randomID(8);
+  const experiment_version = "ambiguity_naming_v2";
 
   jsPsych.data.addProperties({
-    subject: subject_id
+    subject: subject_id,
+    experiment_version: experiment_version
   });
 
   var images = imageNames
@@ -172,8 +174,9 @@
     type: jsPsychHtmlButtonResponse,
     choices: ["Continue"],
     stimulus: "<p>In this experiment, images will appear in the center of the screen.</p>" +
-      "<p>Below each image, you will be presented with a question and a slider that you can drag to respond.</p>" +
-      "<p>The experiment consists of three sessions. You will have breaks between each session.</p>"+
+      "<p>For each image, press the SPACE bar as soon as a category/name comes to mind.</p>" +
+      "<p>After that, you will type the category name and then complete several slider ratings.</p>" +
+      "<p>The task includes a short practice block before the main trials.</p>"+
       "<div style='width: 700px;'>",
       data: {
       task: 'instructions'
@@ -186,8 +189,12 @@
     type: jsPsychHtmlButtonResponse,
     choices: ["Start"],
     stimulus:
-      "<p> You will be asked about how <strong>ambiguous</strong> you feel about the image.</p>" +
-      "<p> If you are ready, click on the 'Start' button to start the session. </p>" +
+      "<p><strong>Per trial sequence:</strong></p>" +
+      "<p>1) View image and press SPACE when a category comes to mind.</p>" +
+      "<p>2) Type the category name.</p>" +
+      "<p>3) Rate pleasure, ambiguity, and naming confidence.</p>" +
+      "<p>If no name comes to mind quickly, the image will continue automatically.</p>" +
+      "<p>If you are ready, click 'Start'.</p>" +
       "<div style='width: 700px;'>",
     post_trial_gap: 1000,
     data: {
@@ -207,20 +214,154 @@
     }
   };
 
-  var test_ambiguity = {
-    type: jsPsychImageSliderResponse,
-    stimulus: jsPsych.timelineVariable('stimulus'),
-    stimulus_height: 375,
-    min: 1,
-    max: 5,
-    slider_start: 3,
-    slider_width: 700,
-    labels: ['Not at all', 'Barely ambiguous', 'Somewhat ambiguous', 'ambiguous', 'Very ambiguous'],
-    prompt: "<p>How <strong>ambiguous</strong> do you feel about the image?</p>",
-    data: {
-      task: 'test_ambiguity'
-    }
+  function normalizeStimulusName(stimulusPath) {
+    return String(stimulusPath || "")
+      .replace(/^all_presented_images\//, "")
+      .replace(/\.[^/.]+$/, "")
+      .replace(/[^A-Za-z0-9_-]/g, "_");
+  }
+
+  var main_trial_counter = 0;
+  var practice_trial_counter = 0;
+  var current_trial_context = {
+    trial_uid: null,
+    stimulus: null,
+    phase: null,
+    trial_index: null
   };
+
+  function setCurrentTrialContext(stimulus, phase) {
+    if (phase === "practice") {
+      practice_trial_counter += 1;
+      current_trial_context.trial_index = practice_trial_counter;
+    } else {
+      main_trial_counter += 1;
+      current_trial_context.trial_index = main_trial_counter;
+    }
+    current_trial_context.stimulus = stimulus;
+    current_trial_context.phase = phase;
+    current_trial_context.trial_uid =
+      subject_id + "_" + phase + "_" + current_trial_context.trial_index + "_" + normalizeStimulusName(stimulus);
+  }
+
+  function ratingLabels(leftAnchor, rightAnchor) {
+    return [leftAnchor, "", "", "", "", "", rightAnchor];
+  }
+
+  function createNamingOnsetTrial(phase) {
+    return {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: function () {
+        var stim = jsPsych.timelineVariable("stimulus");
+        return (
+          "<div><img src='" + stim + "' style='max-height:375px; width:auto;'></div>" +
+          "<p><strong>Press SPACE as soon as a category/name comes to mind.</strong></p>"
+        );
+      },
+      choices: [" "],
+      response_ends_trial: true,
+      trial_duration: 5000,
+      on_start: function () {
+        var stim = jsPsych.timelineVariable("stimulus");
+        setCurrentTrialContext(stim, phase);
+      },
+      on_finish: function (data) {
+        data.task = "naming_onset";
+        data.phase = phase;
+        data.stimulus = current_trial_context.stimulus;
+        data.trial_uid = current_trial_context.trial_uid;
+        data.trial_index = current_trial_context.trial_index;
+        data.naming_onset_rt_ms = data.rt;
+        data.naming_onset_key = data.response;
+        data.naming_onset_missed = data.response === null;
+        data.flag_rt_too_fast = data.rt !== null && data.rt < 150;
+        data.flag_no_naming_response = data.naming_onset_missed;
+      }
+    };
+  }
+
+  function createCategoryInputTrial(phase) {
+    return {
+      type: jsPsychSurveyHtmlForm,
+      html: "<p>Type the category/name that best matches the image:</p>" +
+        "<p><input type='text' id='category_label' name='category_label' required style='width:500px;'></p>",
+      button_label: "Continue",
+      on_finish: function (data) {
+        var responseObj = typeof data.response === "string" ? JSON.parse(data.response) : data.response;
+        var rawLabel = responseObj && responseObj.category_label ? String(responseObj.category_label) : "";
+        var trimmedLabel = rawLabel.trim();
+        data.task = "category_input";
+        data.phase = phase;
+        data.stimulus = current_trial_context.stimulus;
+        data.trial_uid = current_trial_context.trial_uid;
+        data.trial_index = current_trial_context.trial_index;
+        data.typed_category_label_raw = rawLabel;
+        data.typed_category_label_trimmed = trimmedLabel;
+        data.typed_label_empty_attempts = trimmedLabel.length === 0 ? 1 : 0;
+        data.flag_label_too_short = trimmedLabel.length > 0 && trimmedLabel.length < 2;
+        data.flag_empty_label_attempts = data.typed_label_empty_attempts > 0;
+      }
+    };
+  }
+
+  function randomSliderStart() {
+    return Math.floor(Math.random() * 7) + 1;
+  }
+
+  function createRatingTrial(phase, taskName, promptText, leftAnchor, rightAnchor) {
+    return {
+      type: jsPsychImageSliderResponse,
+      stimulus: function () {
+        return current_trial_context.stimulus;
+      },
+      stimulus_height: 375,
+      min: 1,
+      max: 7,
+      slider_start: randomSliderStart,
+      slider_width: 700,
+      require_movement: true,
+      labels: ratingLabels(leftAnchor, rightAnchor),
+      prompt: promptText,
+      on_finish: function (data) {
+        data.task = taskName;
+        data.phase = phase;
+        data.stimulus = current_trial_context.stimulus;
+        data.trial_uid = current_trial_context.trial_uid;
+        data.trial_index = current_trial_context.trial_index;
+      }
+    };
+  }
+
+  function createRatingConfidenceTrial(phase) {
+    return {
+      type: jsPsychImageSliderResponse,
+      stimulus: function () {
+        return current_trial_context.stimulus;
+      },
+      stimulus_height: 375,
+      min: 1,
+      max: 7,
+      slider_start: randomSliderStart,
+      slider_width: 700,
+      require_movement: true,
+      labels: ratingLabels("Not confident at all", "Very confident"),
+      prompt: "<p>How confident are you in the category name you provided?</p>",
+      on_finish: function (data) {
+        var recentRatings = jsPsych.data.get().last(2).values();
+        var straightline = false;
+        if (recentRatings.length === 2) {
+          straightline = recentRatings[0].response === recentRatings[1].response &&
+            recentRatings[0].response === data.response;
+        }
+        data.task = "rating_confidence";
+        data.phase = phase;
+        data.stimulus = current_trial_context.stimulus;
+        data.trial_uid = current_trial_context.trial_uid;
+        data.trial_index = current_trial_context.trial_index;
+        data.flag_straightline_ratings = straightline;
+      }
+    };
+  }
 
 
   // Function to randomly pick a chunk
@@ -231,6 +372,9 @@
   return [chunkList[randomIndex], randomIndex]; // Directly return the random chunk
   }
   const [test_stimuli, chunk_index] = getRandomChunk();
+  const practice_stimuli = images.slice(0, 2).map(function (img) {
+    return { stimulus: img };
+  });
   console.log(test_stimuli.length, chunk_index)
   
   jsPsych.data.addProperties({
@@ -238,9 +382,87 @@
   });
 
 
+  var naming_onset_practice = createNamingOnsetTrial("practice");
+  var category_input_practice = createCategoryInputTrial("practice");
+  var rating_pleasure_practice = createRatingTrial(
+    "practice",
+    "rating_pleasure",
+    "<p>How <strong>pleasant</strong> is this image?</p>",
+    "Very unpleasant",
+    "Very pleasant"
+  );
+  var rating_ambiguity_practice = createRatingTrial(
+    "practice",
+    "rating_ambiguity",
+    "<p>How <strong>ambiguous</strong> is this image?</p>",
+    "Not at all ambiguous",
+    "Very ambiguous"
+  );
+  var rating_confidence_practice = createRatingConfidenceTrial("practice");
+
+  var practice_feedback = {
+    type: jsPsychHtmlButtonResponse,
+    choices: ["Continue"],
+    stimulus: function () {
+      var trialUid = current_trial_context.trial_uid;
+      var trialRows = jsPsych.data.get().filter({ trial_uid: trialUid }).values();
+      var onsetRow = trialRows.find(function (row) { return row.task === "naming_onset"; });
+      var labelRow = trialRows.find(function (row) { return row.task === "category_input"; });
+      var nameStatus = onsetRow && !onsetRow.naming_onset_missed ? "captured" : "not captured (timed out)";
+      var typedStatus = labelRow && labelRow.typed_category_label_trimmed ? "accepted" : "missing";
+      return "<p><strong>Practice feedback</strong></p>" +
+        "<p>SPACE response: " + nameStatus + ".</p>" +
+        "<p>Typed category: " + typedStatus + ".</p>" +
+        "<p>Remember to respond in all steps on each trial.</p>";
+    },
+    data: {
+      task: "practice_feedback",
+      phase: "practice"
+    }
+  };
+
+  var practice_procedure = {
+    timeline: [
+      fixation,
+      naming_onset_practice,
+      category_input_practice,
+      rating_pleasure_practice,
+      rating_ambiguity_practice,
+      rating_confidence_practice,
+      practice_feedback
+    ],
+    timeline_variables: practice_stimuli,
+    randomize_order: false
+  };
+
+  var naming_onset_main = createNamingOnsetTrial("main");
+  var category_input_main = createCategoryInputTrial("main");
+  var rating_pleasure_main = createRatingTrial(
+    "main",
+    "rating_pleasure",
+    "<p>How <strong>pleasant</strong> is this image?</p>",
+    "Very unpleasant",
+    "Very pleasant"
+  );
+  var rating_ambiguity_main = createRatingTrial(
+    "main",
+    "rating_ambiguity",
+    "<p>How <strong>ambiguous</strong> is this image?</p>",
+    "Not at all ambiguous",
+    "Very ambiguous"
+  );
+  var rating_confidence_main = createRatingConfidenceTrial("main");
+
   /* define test procedure */
-  var test_procedure_ambiguity = {
-    timeline: [fixation, test_ambiguity],
+  var test_procedure_main = {
+    timeline: [
+      fixation,
+      naming_onset_main,
+      category_input_main,
+      rating_pleasure_main,
+      rating_ambiguity_main,
+      rating_confidence_main
+    ],
     timeline_variables: test_stimuli,
     randomize_order: true
   };
@@ -262,7 +484,8 @@
 
   var overall_procedure = {
     timeline: [
-      test_procedure_ambiguity, 
+      practice_procedure,
+      test_procedure_main, 
       // break_instructions, 
       // spacecurv_instructions, 
       // test_procedure_spacecurv, 
@@ -361,11 +584,12 @@
         var tmp = new Uint32Array(1);
         tmp = window.crypto.getRandomValues(tmp);
         var dbpath = auth.currentUser.uid + '/' + tmp[0]; // Use first element of Uint32Array
+        var dataPayload = jsPsych.data.get().values();
 
         // Save data to Firebase database
         firebase.database().ref(dbpath).set({
-          data: jsPsych.data.get().values(),
-          study: 'ambiguity_rating',
+          data: dataPayload,
+          study: 'ambiguity_rating_naming_v2',
           date: new Date().toISOString() // Save date in ISO format
         })
         .then(() => {
@@ -373,6 +597,7 @@
         })
         .catch((error) => {
           console.error("Error saving data:", error);
+          alert("Data save failed. Please do not close this page and contact the researcher.");
         });
       }
     };
